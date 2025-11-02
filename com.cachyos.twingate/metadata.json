@@ -1,0 +1,25 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Email": "cal007@web.de",
+                "Name": "Uwe Fabian"
+            }
+        ],
+        "Category": "System Information",
+        "Description": "Twingate VPN status monitor and control widget with Reality Check",
+        "Icon": "network-vpn",
+        "Id": "com.cachyos.twingate",
+        "License": "GPL-3.0+",
+        "Name": "Twingate Monitor",
+        "Version": "1.0",
+        "Website": "https://github.com/cal007/twingate-plasma-widget"
+    },
+    "X-Plasma-API": "declarativeappletscript",
+    "X-Plasma-API-Minimum-Version": "6.0",
+    "X-Plasma-MainScript": "ui/main.qml",
+    "X-Plasma-Provides": [
+        "org.kde.plasma.plasmoid"
+    ]
+}
