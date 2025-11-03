@@ -55,6 +55,12 @@ kquitapp6 plasmashell && kstart plasmashell
 
 ## Or use Plasma’ s ”Install from file” feature with the packaged .plasmoid file.
 
+# 1st installlation
+plasmapkg2 -i ~/twingate-monitor.plasmoid
+
+# Or Update:
+plasmapkg2 -u ~/twingate-monitor.plasmoid
+
 ## License
 ## GPL-3.0+
 
