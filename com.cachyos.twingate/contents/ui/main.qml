@@ -22,8 +22,9 @@ PlasmoidItem {
     property string rawStatusOutput: ""
     property string debugLog: ""
     readonly property string authResource: Plasmoid.configuration.authResource || ""
-    readonly property string pingIp: Plasmoid.configuration.pingIp || ""
-    property var remoteNetworks: []
+    // Lies die IP-Liste aus dem richtigen Config-Key
+    readonly property string remoteNetworksCfg: Plasmoid.configuration.remoteNetworks || ""
+    property var pingTargets: []   // getrennt von Ressourcen-/Netzwerk-Namen
     property bool isAuthenticated: false
     property bool hasTriedAuth: false
     property var pingResults: ({})
@@ -31,6 +32,9 @@ PlasmoidItem {
     property real lastRestartTime: 0
 
     Plasmoid.icon: realityCheckSuccess ? "security-high" : (serviceRunning ? "security-medium" : "security-low")
+
+// Beim Start initial einlesen
+
 
     function addDebugLog(msg) {
         let timestamp = Qt.formatTime(new Date(), "hh:mm:ss")
@@ -42,40 +46,49 @@ PlasmoidItem {
     }
 
     function parseRemoteNetworks() {
-        let rawList = Plasmoid.configuration.remoteNetworks || []
-        let parsed = []
+        let rawString = (remoteNetworksCfg || "").trim()
 
-        for (let i = 0; i < rawList.length; i++) {
-            let ip = rawList[i].trim()
-            if (ip !== "") {
-                parsed.push(ip)
-            }
-        }
-
-        remoteNetworks = parsed
-        addDebugLog("📡 Remote Networks: " + JSON.stringify(parsed))
-    }
-
-    function doPing() {
-        if (remoteNetworks.length === 0) {
-            addDebugLog("⚠️ No remote networks configured!")
-            pingSuccess = false
+        if (rawString === "") {
+            pingTargets = []
+            addDebugLog("⚠️ No ping IPs configured")
             return
         }
 
-        addDebugLog("🔍 Pinging " + remoteNetworks.length + " networks...")
-        pingResults = {}
+        let parsed = rawString.split(/[\s,;]+/).filter(ip => ip !== "")
+        pingTargets = parsed
+        addDebugLog("📡 Ping IPs: " + JSON.stringify(parsed))
+    }
 
-        for (let i = 0; i < remoteNetworks.length; i++) {
-            let ip = remoteNetworks[i]
+    // Helper zum Ausführen externer Kommandos über Plasma5Support.DataSource
+    function execCommand(cmd) {
+        // Optional: absoluter Pfad für Robustheit
+        // if (cmd.startsWith("ping ")) cmd = "/usr/bin/" + cmd
+        addDebugLog("▶ " + cmd)
+        executable.connectSource(cmd)
+    }
+
+    // Helper zum Abmelden des Kommandos
+    function disconnectSource(src) {
+        executable.disconnectSource(src)
+    }
+
+
+    function doPing() {
+        if (pingTargets.length === 0) {
+            addDebugLog("⚠️ No remote networks configured!")
+            pingSuccess = false
+            updateRealityCheck()  // ✅ Auch bei leerem Ping Reality updaten!
+            return
+        }
+
+        addDebugLog("🔍 Pinging " + pingTargets.length + " targets...")
+        pingResults = {}  // ✅ Reset vor neuem Ping!
+
+        for (let i = 0; i < pingTargets.length; i++) {
+            let ip = pingTargets[i]
             addDebugLog("  → Ping " + ip)
             execCommand("ping -c 1 -W 2 " + ip)
         }
-    }
-
-    function execCommand(cmd) {
-        addDebugLog("=== EXECUTING: " + cmd)
-        executable.connectSource(cmd)
     }
 
     function toggleService() {
@@ -139,53 +152,38 @@ PlasmoidItem {
     function checkResources() {
         execCommand("twingate resources")
     }
-
     function updateRealityCheck() {
         let oldState = realityCheckSuccess
 
-        if (!serviceRunning || serviceState === "activating") {
+        // ✅ REGEL 1: Service muss aktiv sein
+        if (!serviceRunning || serviceState !== "active") {
             realityCheckSuccess = false
             isAuthenticated = false
-            addDebugLog("❌ REALITY: Service not ready (state: " + serviceState + ")")
-
-            if (waitingForServiceStart && serviceState === "activating") {
-                // Weiter warten...
-            } else if (waitingForServiceStart) {
-                waitingForServiceStart = false
-            }
+            addDebugLog("❌ REALITY: Service not active (state: " + serviceState + ")")
             return
         }
 
-        if (serviceRunning && serviceState === "active" && waitingForServiceStart) {
-            waitingForServiceStart = false
-            addDebugLog("✅ Service is now ACTIVE")
-        }
-
-        let statusLines = rawStatusOutput.trim().toLowerCase()
-
-        if (statusLines.includes("not running") || statusLines.includes("stopped") || statusLines.includes("offline")) {
-            realityCheckSuccess = false
-            isAuthenticated = false
-            addDebugLog("❌ REALITY: Twingate reports OFFLINE")
-        } else if (statusLines.includes("online") || statusLines.includes("running") || statusLines.includes("connected")) {
+        // ✅ REGEL 2: Wenn Ping-IPs konfiguriert sind, MÜSSEN ALLE OK sein!
+        if (pingTargets.length > 0) {
             if (pingSuccess) {
                 realityCheckSuccess = true
                 isAuthenticated = true
-                addDebugLog("✅ REALITY: Twingate ONLINE + Ping OK")
+                addDebugLog("✅ REALITY: Service active + ALL pings OK")
             } else {
                 realityCheckSuccess = false
                 isAuthenticated = false
-                addDebugLog("⚠️ REALITY: Twingate says online but PING FAILED")
+                addDebugLog("❌ REALITY: Service active but PING FAILED")
             }
-        } else if (statusLines.includes("unknown") || statusLines === "") {
-            if (pingSuccess) {
+        } else {
+            // ✅ FALLBACK: Keine Pings konfiguriert → verlasse dich auf twingate status
+            if (twingateReportsOnline) {
                 realityCheckSuccess = true
                 isAuthenticated = true
-                addDebugLog("✅ REALITY: Twingate unreliable but PING works!")
+                addDebugLog("✅ REALITY: Service active + twingate reports online (no pings)")
             } else {
                 realityCheckSuccess = false
                 isAuthenticated = false
-                addDebugLog("❌ REALITY: No ping")
+                addDebugLog("❌ REALITY: Service active but twingate offline")
             }
         }
 
@@ -193,6 +191,7 @@ PlasmoidItem {
             addDebugLog("🔄 Reality Check: " + oldState + " → " + realityCheckSuccess)
         }
     }
+
 
     Plasma5Support.DataSource {
         id: executable
@@ -267,28 +266,29 @@ PlasmoidItem {
                 pingResults[ip] = success
                 addDebugLog((success ? "✅" : "❌") + " Ping " + ip)
 
-                let allSuccess = true
-                let checkedCount = 0
+                // ✅ Zähle tatsächlich erhaltene Antworten
+                let checkedCount = Object.keys(pingResults).length
 
-                for (let key in pingResults) {
-                    checkedCount++
-                    if (pingResults[key] !== true) {
-                        allSuccess = false
-                        break
+                if (checkedCount === pingTargets.length) {
+                    // ✅ ALLE IPs müssen erfolgreich sein!
+                    let allSuccess = true
+                    for (let key in pingResults) {
+                        if (pingResults[key] !== true) {
+                            allSuccess = false
+                            break
+                        }
                     }
-                }
 
-                if (checkedCount === remoteNetworks.length) {
                     let oldPing = pingSuccess
                     pingSuccess = allSuccess
 
-                    if (oldPing !== pingSuccess) {
-                        addDebugLog("🔄 Ping Result: " + oldPing + " → " + pingSuccess + " (checked " + checkedCount + "/" + remoteNetworks.length + ")")
-                    }
+                    addDebugLog("🎯 Ping Complete: " + (allSuccess ? "ALL OK" : "SOME FAILED") +
+                    " (" + checkedCount + "/" + pingTargets.length + ")")
 
-                    updateRealityCheck()
+                    updateRealityCheck()  // ✅ Reality Check triggern!
                 }
             }
+
 
             // ============ TWINGATE STATUS ============
             else if (cmd.includes("twingate status")) {
@@ -372,7 +372,6 @@ PlasmoidItem {
 
                 if (newResources.length > 0) {
                     resources = newResources
-                    remoteNetworks = newNetworks
                     resourceParseError = ""
                     addDebugLog("✅ Parsed " + resources.length + " resources")
                 } else {
@@ -412,8 +411,8 @@ PlasmoidItem {
                 checkStatus()
                 checkResources()
 
-                if (cycleCount % 3 === 0 && remoteNetworks.length > 0) {
-                    addDebugLog("🔄 30-second ping cycle")
+                if (cycleCount % 6 === 0 && pingTargets.length > 0) {
+                    addDebugLog("🔄 60-second ping cycle")
                     doPing()
                 }
             }
@@ -426,11 +425,22 @@ PlasmoidItem {
         checkSystemctl()
         checkStatus()
         checkResources()
-        if (remoteNetworks.length > 0) {
+        if (pingTargets.length > 0) {
             doPing()
         }
         checkTimer.start()
     }
+
+    // Bei nachträglichen Änderungen aus dem Config-Dialog neu parsen
+    onRemoteNetworksCfgChanged: {
+        addDebugLog("⚙️ Config changed: remoteNetworks -> " + remoteNetworksCfg)
+        parseRemoteNetworks()
+        onAuthResourceChanged: addDebugLog("⚙️ Config changed: authResource -> " + authResource)
+        checkStatus()
+        checkResources()
+    }
+
+
 
     fullRepresentation: ColumnLayout {
         Layout.minimumWidth: 400
@@ -611,7 +621,7 @@ PlasmoidItem {
             PlasmaComponents.Button {
                 text: "Ping"
                 icon.name: "network-connect"
-                enabled: remoteNetworks.length > 0
+                enabled: pingTargets.length > 0
                 onClicked: root.doPing()
             }
         }

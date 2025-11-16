@@ -10,7 +10,7 @@
       <default></default>
     </entry>
 
-    <entry name="remoteNetworks" type="StringList">
+    <entry name="remoteNetworks" type="String">
       <default></default>
     </entry>
   </group>
