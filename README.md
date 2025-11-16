@@ -40,7 +40,7 @@ Remote Networks: 10.0.0.1,10.1.0.1,172.16.0.1
 
 Every 60 seconds, the widget pings all configured Remote Network IPs. If **at least one** is reachable, Twingate is considered authenticated. This overrides unreliable `twingate status` output.
 
-## Ue of Auth
+## Use of Auth
 
 As it is nit quite reliable to call the authentifivation from the widgte, pushing the "Auth" button in  the widget shows the command to use in a cli . After some time the cli comes up with a link (can be opened in a browser) and the authentucation process runs through in your browser.
 
@@ -71,7 +71,7 @@ plasmapkg2 -u ~/twingate-monitor.plasmoid
 
 ## Contributing
 ## Pull requests welcome!
+```
 
 [![Donate with PayPal](https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif)](https://www.paypal.me/carlegends356)   
-
 
